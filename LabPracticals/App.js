@@ -1,191 +1,62 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
-import {
-  Text,
-  View,
-  StyleSheet,
-  SectionList,
-  SafeAreaView,
-  StatusBar,
-  Alert,
-} from "react-native";
-import { Searchbar } from "react-native-paper";
-import debounce from "lodash.debounce";
-import {
-  createTable,
-  getMenuItems,
-  saveMenuItems,
-  filterByQueryAndCategories,
-} from "./database";
-import Filters from "./components/Filters";
-import { getSectionListData, useUpdateEffect } from "./utils";
+import { StatusBar } from "expo-status-bar";
+import { StyleSheet } from "react-native";
+import Onboarding from "./screens/Onboarding";
+import Profile from "./screens/Profile";
+import SplashScreen from "./screens/SplashScreen";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_URL =
-  "https://raw.githubusercontent.com/Meta-Mobile-Developer-PC/Working-With-Data-API/main/menu-items-by-category.json";
-const sections = ["Appetizers", "Salads", "Beverages"];
-
-const Item = ({ title, price }) => (
-  <View style={styles.item}>
-    <Text style={styles.title}>{title}</Text>
-    <Text style={styles.title}>${price}</Text>
-  </View>
-);
+const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [data, setData] = useState([]);
-  const [searchBarText, setSearchBarText] = useState("");
-  const [query, setQuery] = useState("");
-  const [filterSelections, setFilterSelections] = useState(
-    sections.map(() => false)
-  );
+  const [isLoading, SetisLoading] = useState(true);
+  const [isOnboardingCompleted, SetisOnboardingCompleted] = useState(false);
 
-  const fetchData = async () => {
+  const getLogin = async () => {
     try {
-      const response = await fetch(API_URL);
-      const menuItems = await response.json();
-      console.log("menuItems", menuItems.menu);
-      // Transform the data to flatten the category structure
-      const transformedItems = menuItems.menu.map((item, index) => ({
-        ...item,
-        category: item.category.title, // Flatten the category object to just the title
-        id: item.id || `${item.title}-${index}`,
-      }));
+      const loginDetails = await AsyncStorage.multiGet(["firstname", "email"]);
+      const hasOnboardingCompleted = loginDetails.some(
+        ([key, value]) => value !== null
+      ); // Check if any value exists
 
-      return transformedItems;
+      SetisOnboardingCompleted(hasOnboardingCompleted); // Set true if user data is found
     } catch (error) {
-      console.error("Error fetching data:", error);
-      throw new Error("Failed to fetch menu items");
+      // console.log("Error retrieving login details", error);
+    } finally {
+      SetisLoading(false);
     }
-    // 1. Implement this function
-
-    // Fetch the menu from the API_URL endpoint. You can visit the API_URL in your browser to inspect the data returned
-    // The category field comes as an object with a property called "title". You just need to get the title value and set it under the key "category".
-    // So the server response should be slighly transformed in this function (hint: map function) to flatten out each menu item in the array,
-    // return [];
   };
 
   useEffect(() => {
-    (async () => {
-      try {
-        await createTable();
-        // let menuItems = await getMenuItems();
+    getLogin();
+  }, [isOnboardingCompleted]);
 
-        // The application only fetches the menu data once from a remote URL
-        // and then stores it into a SQLite database.
-        // After that, every application restart loads the menu from the database
-        // if (!menuItems.length) {
-        const menuItems = await fetchData();
-        saveMenuItems(menuItems);
-        // }
-
-        const sectionListData = getSectionListData(menuItems);
-        setData(sectionListData);
-      } catch (e) {
-        // Handle error
-        Alert.alert(e.message);
-      }
-    })();
-  }, []);
-
-  useUpdateEffect(() => {
-    (async () => {
-      const activeCategories = sections.filter((s, i) => {
-        // If all filters are deselected, all categories are active
-        if (filterSelections.every((item) => item === false)) {
-          return true;
-        }
-        return filterSelections[i];
-      });
-      try {
-        const menuItems = await filterByQueryAndCategories(
-          query,
-          activeCategories
-        );
-        const sectionListData = getSectionListData(menuItems);
-        setData(sectionListData);
-      } catch (e) {
-        Alert.alert(e.message);
-      }
-    })();
-  }, [filterSelections, query]);
-
-  const lookup = useCallback((q) => {
-    setQuery(q);
-  }, []);
-
-  const debouncedLookup = useMemo(() => debounce(lookup, 500), [lookup]);
-
-  const handleSearchChange = (text) => {
-    setSearchBarText(text);
-    debouncedLookup(text);
-  };
-
-  const handleFiltersChange = async (index) => {
-    const arrayCopy = [...filterSelections];
-    arrayCopy[index] = !filterSelections[index];
-    setFilterSelections(arrayCopy);
-  };
+  if (isLoading) {
+    return <SplashScreen />;
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Searchbar
-        placeholder="Search"
-        placeholderTextColor="white"
-        onChangeText={handleSearchChange}
-        value={searchBarText}
-        style={styles.searchBar}
-        iconColor="white"
-        inputStyle={{ color: "white" }}
-        elevation={0}
-      />
-      <Filters
-        selections={filterSelections}
-        onChange={handleFiltersChange}
-        sections={sections}
-      />
-      <SectionList
-        style={styles.sectionList}
-        sections={data}
-        keyExtractor={(item, index) => item.id || index.toString()}
-        renderItem={({ item }) => (
-          <Item key={item.id} title={item.title} price={item.price} />
+    <NavigationContainer>
+      <Stack.Navigator>
+        {isOnboardingCompleted ? (
+        <Stack.Screen name="Profile">
+          {props => <Profile {...props} SetisOnboardingCompleted={SetisOnboardingCompleted}/>}
+        </Stack.Screen>
+        ) : (
+          <Stack.Screen name="Onboarding">
+            {props => <Onboarding {...props} SetisOnboardingCompleted={SetisOnboardingCompleted}/>}
+          </Stack.Screen>
         )}
-        renderSectionHeader={({ section: { title } }) => (
-          <Text style={styles.header}>{title}</Text>
-        )}
-      />
-    </SafeAreaView>
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: StatusBar.currentHeight,
-    backgroundColor: "#495E57",
-  },
-  sectionList: {
-    paddingHorizontal: 16,
-  },
-  searchBar: {
-    marginBottom: 24,
-    backgroundColor: "#495E57",
-    shadowRadius: 0,
-    shadowOpacity: 0,
-  },
-  item: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-  },
-  header: {
-    fontSize: 24,
-    paddingVertical: 8,
-    color: "#FBDABB",
-    backgroundColor: "#495E57",
-  },
-  title: {
-    fontSize: 20,
-    color: "white",
+    backgroundColor: "#333333",
   },
 });
